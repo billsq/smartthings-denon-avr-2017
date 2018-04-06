@@ -1,4 +1,4 @@
-# smartthings-denon-avr-2017
+# Denon 2017 AVR Support for Smartthings
 
 Smartthings SmartApp and Device Handler to support 2017 Denon AVR with HEOS enabled.
 
