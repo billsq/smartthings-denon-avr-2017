@@ -16,7 +16,7 @@ metadata {
         attribute "satcbl", "string"
         attribute "mplay", "string"
         attribute "game", "string"
-        attribute "turner", "string"
+        attribute "tuner", "string"
         attribute "aux1", "string"
         attribute "aux2", "string"
         attribute "net", "string"
@@ -30,7 +30,7 @@ metadata {
         command "satcbl"
         command "mplay"
         command "game"
-        command "turner"
+        command "tuner"
         command "aux1"
         command "aux2"
         command "net"
@@ -122,9 +122,9 @@ metadata {
             state "on", label:'Game', action:"game", icon:"st.Electronics.electronics5", backgroundColor:"#E6E6E6", nextState:"off"
         }
 
-        standardTile("turner", "device.turner", width: 2, height: 1, decoration: "flat"){
-            state "off", label:'Turner', action:"turner", icon:"st.Electronics.electronics10" , backgroundColor:"#ffffff", nextState:"on"
-            state "on", label:'Turner', action:"turner", icon:"st.Electronics.electronics10", backgroundColor:"#E6E6E6", nextState:"off"
+        standardTile("tuner", "device.tuner", width: 2, height: 1, decoration: "flat"){
+            state "off", label:'Tuner', action:"tuner", icon:"st.Electronics.electronics10" , backgroundColor:"#ffffff", nextState:"on"
+            state "on", label:'Tuner', action:"tuner", icon:"st.Electronics.electronics10", backgroundColor:"#E6E6E6", nextState:"off"
         }
 
         standardTile("aux1", "device.aux1", width: 2, height: 1, decoration: "flat"){
@@ -152,13 +152,13 @@ metadata {
         }
 
         main "switch"
-        details(["mediaMulti", "switch", "phono", "cd", "dvd", "bd", "tv", "satcbl", "mplay", "game", "turner", "aux1", "aux2", "net", "bt", "refresh"])
+        details(["mediaMulti", "switch", "phono", "cd", "dvd", "bd", "tv", "satcbl", "mplay", "game", "tuner", "aux1", "aux2", "net", "bt", "refresh"])
     }
 }
 
 // parse events into attributes
 def parse(String description) {
-    log.debug "Parsing ${description}"
+    //log.debug "Parsing ${description}"
 
     def msg = parseLanMessage(description)
     def headerString = msg.header
@@ -233,27 +233,21 @@ def parse(String description) {
 
                 if (item?.item?.size()) {
                     def trackData = [:]
-                    def trackDesc = ""
-                    def trackText = ""
 
                     trackData["name"] = item?.item?.title?.text()
                     trackData["artist"] = item?.item?.artist?.text()
                     trackData["album"] = item?.item?.album?.text()
                     trackData["creator"] = item?.item?.creator?.text()
 
-                    if (trackData["artist"] == "\"\"") {
+                    if (trackData["artist"]?.trim() == null || trackData["artist"] == '""') {
                         trackData["artist"] = trackData["creator"]
                     }
-
-                    trackDesc += "${trackData["name"]}\n"
-                    trackDesc += "${trackData["artist"]}\n"
-                    trackDesc += "${trackData["album"]}"
 
                     log.info "name=${trackData["name"]} artist=${trackData["artist"]} album=${trackData["album"]}"
 
                     parsed = true
+                    state.trackData = trackData
                     events << createEvent(name: "trackData", value: trackData)
-                    events << createEvent(name: "trackDescription", value: trackDesc)
                 }
             }
         }
@@ -261,7 +255,6 @@ def parse(String description) {
         if (!parsed) {
             log.debug "Unparsed body ${bodyString}"
         }
-
     }
 
     runIn(1.5, sendPollCmd)
@@ -281,7 +274,7 @@ private String getHostAddress() {
     def port = convertHexToInt(getDataValue("port"))
     def host = "${ip}:${port}"
 
-    log.debug "Using SOAP host: ${host} for device: ${device.label}"
+    //log.debug "Using SOAP host: ${host} for device: ${device.label}"
 
     return host
 }
@@ -290,7 +283,7 @@ private String getApiAddress() {
     def ip = convertHexToIP(getDataValue("ip"))
     def host = "${ip}:${getDataValue("apiPort")}"
 
-    log.debug "Using API host: ${host} for device: ${device.label}"
+    //log.debug "Using API host: ${host} for device: ${device.label}"
 
     return host
 }
@@ -298,14 +291,22 @@ private String getApiAddress() {
 private String getCallBackAddress() {
     def address = "${device.hub.getDataValue("localIP")}:${device.hub.getDataValue("localSrvPortTCP")}"
 
-    log.debug "callbackAddress ${address}"
+    //log.debug "callbackAddress ${address}"
 
     return address
 }
 
+private Map getSourceNames() {
+    if (state.sourceName == null) {
+        state.sourceName = [:]
+    }
+
+    state.sourceName
+}
+
 def installed() {
     log.debug "Executing installed() for ${device.label}"
-    state.allSources = ["phono", "cd", "dvd", "bd", "tv", "satcbl", "mplay", "game", "turner", "aux1", "aux2", "net", "bt"]
+    state.allSources = ["phono", "cd", "dvd", "bd", "tv", "satcbl", "mplay", "game", "tuner", "aux1", "aux2", "net", "bt"]
     initialize()
 }
 
@@ -334,6 +335,23 @@ def sendPollCmd() {
     log.debug "Executing sendPollCmd() for ${device.label}"
 
     sendHubCommand(new physicalgraph.device.HubAction([
+            path: "/goform/AppCommand0300.xml",
+            method: "POST",
+            headers: [Host: getApiAddress()],
+            body:"""<?xml version="1.0" encoding="utf-8"?>
+<tx>
+  <cmd id="3">
+    <name>GetSourceRename</name>
+    <list/>
+  </cmd>
+</tx>
+"""
+        ],
+        getDataValue("mac"),
+        [callback: getSourceRenameCallback]
+    ))
+
+    sendHubCommand(new physicalgraph.device.HubAction([
             path: "/goform/AppCommand.xml",
             method: "POST",
             headers: [Host: getApiAddress()],
@@ -353,6 +371,7 @@ def sendPollCmd() {
 
 def refresh() {
     log.debug "Executing refresh() for ${device.label}"
+    state.allSources = ["phono", "cd", "dvd", "bd", "tv", "satcbl", "mplay", "game", "tuner", "aux1", "aux2", "net", "bt"]
 
     unschedule(resubscribeRenderingControl)
     unschedule(resubscribeAVTransport)
@@ -422,16 +441,6 @@ def off() {
         [callback: setCmdCallback]
     )
 */
-}
-
-def childOn(String dni) {
-    log.debug "Executing childOn() for ${dni}"
-
-}
-
-def childOff(String dni) {
-    log.debug "Executing childOff() for ${dni}"
-
 }
 
 def setLevel(level) {
@@ -562,11 +571,11 @@ def resumeTrack(trackToResume) {
 }
 
 def setTrack(trackToSet) {
-       log.debug "Executing setTrack() for ${device.label} track=${trackToSet}"
+    log.debug "Executing setTrack() for ${device.label} track=${trackToSet}"
 }
 
 def phono() {
-       log.debug "Executing phono() for ${device.label}"
+    log.debug "Executing phono() for ${device.label}"
 
     new physicalgraph.device.HubAction([
             path: "/goform/formiPhoneAppDirect.xml?SIPHONO",
@@ -577,7 +586,7 @@ def phono() {
 }
 
 def cd() {
-       log.debug "Executing cd() for ${device.label}"
+    log.debug "Executing cd() for ${device.label}"
 
     new physicalgraph.device.HubAction([
             path: "/goform/formiPhoneAppDirect.xml?SICD",
@@ -588,7 +597,7 @@ def cd() {
 }
 
 def dvd() {
-       log.debug "Executing dvd() for ${device.label}"
+    log.debug "Executing dvd() for ${device.label}"
 
     new physicalgraph.device.HubAction([
             path: "/goform/formiPhoneAppDirect.xml?SIDVD",
@@ -599,7 +608,7 @@ def dvd() {
 }
 
 def bd() {
-       log.debug "Executing bd() for ${device.label}"
+    log.debug "Executing bd() for ${device.label}"
 
     new physicalgraph.device.HubAction([
             path: "/goform/formiPhoneAppDirect.xml?SIBD",
@@ -610,7 +619,7 @@ def bd() {
 }
 
 def tv() {
-       log.debug "Executing tv() for ${device.label}"
+    log.debug "Executing tv() for ${device.label}"
 
     new physicalgraph.device.HubAction([
             path: "/goform/formiPhoneAppDirect.xml?SITV",
@@ -621,7 +630,7 @@ def tv() {
 }
 
 def satcbl() {
-       log.debug "Executing satcbl() for ${device.label}"
+    log.debug "Executing satcbl() for ${device.label}"
 
     new physicalgraph.device.HubAction([
             path: "/goform/formiPhoneAppDirect.xml?SISAT%2FCBL",
@@ -632,7 +641,7 @@ def satcbl() {
 }
 
 def mplay() {
-       log.debug "Executing mplay() for ${device.label}"
+    log.debug "Executing mplay() for ${device.label}"
 
     new physicalgraph.device.HubAction([
             path: "/goform/formiPhoneAppDirect.xml?SIMPLAY",
@@ -643,7 +652,7 @@ def mplay() {
 }
 
 def game() {
-       log.debug "Executing game() for ${device.label}"
+    log.debug "Executing game() for ${device.label}"
 
     new physicalgraph.device.HubAction([
             path: "/goform/formiPhoneAppDirect.xml?SIGAME",
@@ -653,11 +662,11 @@ def game() {
     )
 }
 
-def turner() {
-       log.debug "Executing turner() for ${device.label}"
+def tuner() {
+    log.debug "Executing tuner() for ${device.label}"
 
     new physicalgraph.device.HubAction([
-            path: "/goform/formiPhoneAppDirect.xml?SITURNER",
+            path: "/goform/formiPhoneAppDirect.xml?SITUNER",
             method: "GET",
             headers: [Host: getApiAddress()],
         ]
@@ -665,7 +674,7 @@ def turner() {
 }
 
 def aux1() {
-       log.debug "Executing aux1() for ${device.label}"
+    log.debug "Executing aux1() for ${device.label}"
 
     new physicalgraph.device.HubAction([
             path: "/goform/formiPhoneAppDirect.xml?SIAUX1",
@@ -676,7 +685,7 @@ def aux1() {
 }
 
 def aux2() {
-       log.debug "Executing aux2() for ${device.label}"
+    log.debug "Executing aux2() for ${device.label}"
 
     new physicalgraph.device.HubAction([
             path: "/goform/formiPhoneAppDirect.xml?SIAUX2",
@@ -687,7 +696,7 @@ def aux2() {
 }
 
 def net() {
-       log.debug "Executing net() for ${device.label}"
+    log.debug "Executing net() for ${device.label}"
 
     new physicalgraph.device.HubAction([
             path: "/goform/formiPhoneAppDirect.xml?SINET",
@@ -698,7 +707,7 @@ def net() {
 }
 
 def bt() {
-       log.debug "Executing bt() for ${device.label}"
+    log.debug "Executing bt() for ${device.label}"
 
     new physicalgraph.device.HubAction([
             path: "/goform/formiPhoneAppDirect.xml?SIBT",
@@ -837,6 +846,63 @@ void setCmdCallback(physicalgraph.device.HubResponse hubResponse) {
     }
 }
 
+void getSourceRenameCallback(physicalgraph.device.HubResponse hubResponse) {
+    //log.debug "Executing getSourceRenameCallback() body=${hubResponse.body}"
+    log.debug "Executing getSourceRenameCallback()"
+
+    def headers = hubResponse.headers
+    def params = hubResponse.xml?.cmd?.list?.param
+
+    if (params.size()) {
+        def sourceNames = getSourceNames()
+
+        params.each {
+            def source = it.@name?.text()
+            def name = it.text()
+
+            switch (source) {
+                case "CBL/SAT":
+                    sourceNames["satcbl"] = name
+                    break
+                case "DVD":
+                    sourceNames["dvd"] = name
+                    break
+                case "Blu-ray":
+                    sourceNames["bd"] = name
+                    break
+                case "GAME":
+                    sourceNames["game"] = name
+                    break
+                case "Media Player":
+                    sourceNames["mplay"] = name
+                    break
+                case "TV AUDIO":
+                    sourceNames["tv"] = name
+                    break
+                case "AUX1":
+                    sourceNames["aux1"] = name
+                    break
+                case "AUX2":
+                    sourceNames["aux2"] = name
+                    break
+                case "CD":
+                    sourceNames["cd"] = name
+                    break
+                case "PHONO":
+                    sourceNames["phono"] = name
+                    break
+                case "TUNER":
+                    sourceNames["tuner"] = name
+                    break
+                default:
+                    log.error "Unknown source ${source} name ${name}!"
+            }
+        }
+
+        //log.debug "sourceNames ${sourceNames}"
+    }
+}
+
 void pollCallback(physicalgraph.device.HubResponse hubResponse) {
     //log.debug "Executing pollCallback() body=${hubResponse.body}"
     log.debug "Executing pollCallback()"
@@ -883,13 +949,50 @@ void pollCallback(physicalgraph.device.HubResponse hubResponse) {
         // GetAllZoneSource
         def source = cmds[3].zone1?.source?.text()
         if (source) {
-            log.trace "Got GetAllZoneSource zone1=${source}"
             source = source.toLowerCase().replaceAll("/", "")
+            log.trace "Got GetAllZoneSource zone1=${source}"
 
             state.allSources.each {
-                if (it == source && device.currentValue(it) != "on") {
-                    sendEvent(name: it, value: "on")
-                } else if (it != source && device.currentValue(it) == "on") {
+                if (it == source) {
+                    if (device.currentValue(it) != "on") {
+                        sendEvent(name: it, value: "on")
+                    }
+
+                    def trackDesc = ""
+
+                    if (powerStatus == "ON") {
+                        if (it == "net") {
+                            if (state.trackData != null) {
+                                //log.debug "trackData ${state.trackData}"
+
+                                if (state.trackData.name?.trim() && state.trackData.name != '""') {
+                                    trackDesc += "${state.trackData.name}"
+                                }
+
+                                if (state.trackData.artist?.trim() && state.trackData.artist != '""') {
+                                    trackDesc += "\n${state.trackData.artist}"
+                                }
+
+                                if (state.trackData.album?.trim() && state.trackData.album != '""') {
+                                    trackDesc += "\n${state.trackData.album}"
+                                }
+                            }
+
+                            //log.trace "trackDesc ${trackDesc}"
+                        } else {
+                            def sourceNames = getSourceNames()
+                            def name = sourceNames[it]
+
+                            if (name != null) {
+                                trackDesc = name
+                            }
+
+                            //log.trace "trackDesc ${name}"
+                        }
+
+                        sendEvent(name: "trackDescription", value: trackDesc)
+                    }
+                } else if (device.currentValue(it) == "on") {
                     log.trace "Switching source ${it} off"
                     sendEvent(name: it, value: "off")
                 }
@@ -899,5 +1002,3 @@ void pollCallback(physicalgraph.device.HubResponse hubResponse) {
         }
     }
 }
-
-
