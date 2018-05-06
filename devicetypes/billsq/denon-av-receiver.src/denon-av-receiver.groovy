@@ -734,7 +734,7 @@ def subscribe(List events) {
                     "Accept-Language": "zh-cn"
                 ]
             ],
-            "${device.label}|${it}|subscribe",
+            getDataValue("mac"),
             [callback: "subscribeHandler${it}"]
         ))
     }
@@ -753,7 +753,7 @@ def resubscribe(event, sid) {
                 "TIMEOUT": "Second-86400"
             ]
         ],
-        "${device.label}|${event}|resubscribe",
+        getDataValue("mac"),
         [callback: "subscribeHandler${event}"]
     ))
 }
@@ -781,7 +781,11 @@ def resubscribeRenderingControl() {
     def sid = state.renderingControlSid
     log.debug "Executing resubscribeRenderingControl() sid=${sid}"
 
-    subscribe(["RenderingControl"])
+	if (sid) {
+		resubscribe("RenderingControl", sid)
+    } else {
+    	subscribe(["RenderingControl"])
+    }
 }
 
 void subscribeHandlerRenderingControl(physicalgraph.device.HubResponse hubResponse) {
@@ -802,7 +806,11 @@ def resubscribeAVTransport() {
     def sid = state.avTransportSid
     log.debug "Executing resubscribeAVTransport() sid=${sid}"
 
-    subscribe(["AVTransport"])
+	if (sid) {
+		resubscribe("AVTransport", sid)
+    } else {
+    	subscribe(["AVTransport"])
+    }
 }
 
 void subscribeHandlerAVTransport(physicalgraph.device.HubResponse hubResponse) {
