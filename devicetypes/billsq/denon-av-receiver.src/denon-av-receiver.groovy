@@ -6,7 +6,7 @@ metadata {
         capability "Refresh"
         capability "Sensor"
         capability "Music Player"
-        capability "Switch Level"
+        //capability "Switch Level"
 
         attribute "phono", "string"
         attribute "cd", "string"
@@ -270,8 +270,8 @@ private String convertHexToIP(hex) {
 }
 
 private String getHostAddress() {
-    def ip = convertHexToIP(getDataValue("ip"))
-    def port = convertHexToInt(getDataValue("port"))
+    def ip = convertHexToIP(getDataValue("networkAddress"))
+    def port = convertHexToInt(getDataValue("deviceAddress"))
     def host = "${ip}:${port}"
 
     //log.debug "Using SOAP host: ${host} for device: ${device.label}"
@@ -280,7 +280,7 @@ private String getHostAddress() {
 }
 
 private String getApiAddress() {
-    def ip = convertHexToIP(getDataValue("ip"))
+    def ip = convertHexToIP(getDataValue("networkAddress"))
     def host = "${ip}:${getDataValue("apiPort")}"
 
     //log.debug "Using API host: ${host} for device: ${device.label}"
@@ -320,14 +320,39 @@ def initialize() {
     refresh()
 }
 
-def sync(ip, port) {
-    def existingIp = getDataValue("ip")
-    def existingPort = getDataValue("port")
-    if (ip && ip != existingIp) {
-        updateDataValue("ip", ip)
+def sync(ssdp_data) {
+	log.debug "Sync with data ${ssdp_data}"
+	def updated = false
+    
+    if (ssdp_data) {
+        def fields = [
+            "AVTransportControlPath",
+            "AVTransportEventPath",
+            "RenderingControlControlPath",
+            "RenderingControlEventPath",
+            "apiPort",
+            "networkAddress",
+            "mac",
+            "deviceAddress"
+        ]
+
+        fields.each {
+            if (ssdp_data[it]) {
+                if (ssdp_data[it] != getDataValue(it)) {
+                    updateDataValue(it, ssdp_data[it])
+                    log.debug "Update ${it} with new value: ${ssdp_data[it]}"
+                    updated = true
+                } else {
+                	log.debug "${it} value doesn't change: ${getDataValue(it)}"
+                }
+            } else {
+            	log.error "No new value exists for field: ${it}!"
+            }
+    	}
     }
-    if (port && port != existingPort) {
-        updateDataValue("port", port)
+    
+    if (updated) {
+        refresh()
     }
 }
 
@@ -939,7 +964,7 @@ void pollCallback(physicalgraph.device.HubResponse hubResponse) {
         if (volume) {
             log.trace "Got GetAllZoneVolume zone1=${volume}"
 
-            sendEvent(name: "level", value: volume)
+            sendEvent(name: "level", value: Math.round(volume.toFloat()))
         } else {
             log.error "Malformed GetAllZoneVolume response!"
         }

@@ -19,13 +19,12 @@ def deviceDiscovery() {
     def devices = getVerifiedDevices()
     devices.each {
         def value = "${it.value.name} [Model: ${it.value.model}]"
-        def key = it.value.mac
+        def key = it.value.ssdpUSN
         options["${key}"] = value
     }
 
     ssdpSubscribe()
     ssdpDiscover()
-    verifyDevices()
 
     return dynamicPage(name: "deviceDiscovery", title: "Discovering your Denon AV receivers...", nextPage: "", refreshInterval: 5, install: true, uninstall: true) {
         section {
@@ -73,20 +72,20 @@ Map verifiedDevices() {
     def map = [:]
     devices.each {
         def value = "${it.value.name} [Model: ${it.value.model}]"
-        def key = it.value.mac
+        def key = it.value.ssdpUSN
         map["${key}"] = value
     }
     map
 }
 
 void verifyDevices() {
-    def devices = getDevices().findAll { it?.value?.verified != true }
+    def devices = getDevices()
     devices.each {
         int port = convertHexToInt(it.value.deviceAddress)
         String ip = convertHexToIP(it.value.networkAddress)
         String host = "${ip}:${port}"
 
-        log.debug("verifyDevices host=${host} path=${it.value.ssdpPath}")
+        log.debug("verifyDevices host=${host} path=${it.value.ssdpPath} device=${it.value}")
 
         sendHubCommand(new physicalgraph.device.HubAction([
                 path: it.value.ssdpPath,
@@ -114,22 +113,20 @@ def addDevices() {
     def devices = getDevices()
 
     selectedDevices.each { dni ->
-        def selectedDevice = devices.find { it.value.mac == dni }
+        def selectedDevice = devices.find { it.value.ssdpUSN == dni }
         def d
         if (selectedDevice) {
-            d = getChildDevices()?.find {
-                it.deviceNetworkId == selectedDevice.value.mac
-            }
+            d = getChildDevice(dni)
         }
 
         if (!d) {
-            log.debug "Creating Denon AV receiver with dni: ${selectedDevice.value.mac}"
-            addChildDevice("billsq", "Denon AV Receiver", selectedDevice.value.mac, selectedDevice?.value.hub, [
+            log.debug "Creating Denon AV receiver with dni: ${selectedDevice.value.ssdpUSN}"
+            addChildDevice("billsq", "Denon AV Receiver", selectedDevice.value.ssdpUSN, selectedDevice.value.hub, [
                 "label": selectedDevice.value.name,
                 "data": [
                     "mac": selectedDevice.value.mac,
-                    "ip": selectedDevice.value.networkAddress,
-                    "port": selectedDevice.value.deviceAddress,
+                    "networkAddress": selectedDevice.value.networkAddress,
+                    "deviceAddress": selectedDevice.value.deviceAddress,
                     "apiPort": selectedDevice.value.apiPort,
                     "RenderingControlControlPath": selectedDevice.value.RenderingControlControlPath,
                     "RenderingControlEventPath": selectedDevice.value.RenderingControlEventPath,
@@ -154,17 +151,12 @@ def ssdpHandler(evt) {
     String ssdpUSN = parsedEvent.ssdpUSN.toString()
     if (devices."${ssdpUSN}") {
         def d = devices."${ssdpUSN}"
-        if (d.networkAddress != parsedEvent.networkAddress || d.deviceAddress != parsedEvent.deviceAddress) {
-            d.networkAddress = parsedEvent.networkAddress
-            d.deviceAddress = parsedEvent.deviceAddress
-            def child = getChildDevice(parsedEvent.mac)
-            if (child) {
-                child.sync(parsedEvent.networkAddress, parsedEvent.deviceAddress)
-            }
-        }
+        d << parsedEvent
     } else {
         devices << ["${ssdpUSN}": parsedEvent]
     }
+    
+    verifyDevices()
 }
 
 void deviceDescriptionHandler(physicalgraph.device.HubResponse hubResponse) {
@@ -223,6 +215,14 @@ void deviceDescriptionHandler(physicalgraph.device.HubResponse hubResponse) {
 
         if (verified == 2) {
             device.value << [verified: true]
+            
+            def child = getChildDevice(device.value.ssdpUSN)
+            if (child) {
+            	log.debug "Found existing child, sync..."
+                child.sync(device.value)
+            }
+        } else {
+            device.value << [verified: false]
         }
 
         log.debug "deviceDescriptionHandler device.value=${device.value}"
