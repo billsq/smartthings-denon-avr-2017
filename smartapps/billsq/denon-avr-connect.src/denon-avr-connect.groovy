@@ -17,10 +17,10 @@ preferences {
 def deviceDiscovery() {
     def options = [:]
     def devices = getVerifiedDevices()
-    devices.each {
-        def value = "${it.value.name} [Model: ${it.value.model}]"
-        def key = it.value.ssdpUSN
-        options["${key}"] = value
+    devices.each { ssdpUSN, deviceData ->
+        def title = "${deviceData["name"]} [Model: ${deviceData["model"]}"
+        options[ssdpUSN] = title
+        log.debug "Adding device to discovery page key=${ssdpUSN} title=${title}"
     }
 
     ssdpSubscribe()
@@ -67,28 +67,28 @@ void ssdpDiscover() {
     sendHubCommand(new physicalgraph.device.HubAction("lan discovery urn:schemas-denon-com:device:AiosDevice:1", physicalgraph.device.Protocol.LAN))
 }
 
-Map verifiedDevices() {
-    def devices = getVerifiedDevices()
-    def map = [:]
-    devices.each {
-        def value = "${it.value.name} [Model: ${it.value.model}]"
-        def key = it.value.ssdpUSN
-        map["${key}"] = value
+Map getVerifiedDevices() {
+    getDevices().findAll { it.value.verified == true }
+}
+
+Map getDevices() {
+    if (!state.devices) {
+        state.devices = [:]
     }
-    map
+    state.devices
 }
 
 void verifyDevices() {
     def devices = getDevices()
-    devices.each {
-        int port = convertHexToInt(it.value.deviceAddress)
-        String ip = convertHexToIP(it.value.networkAddress)
+    devices.each { ssdpUSN, deviceData ->
+        int port = convertHexToInt(deviceData["deviceAddress"])
+        String ip = convertHexToIP(deviceData["networkAddress"])
         String host = "${ip}:${port}"
 
-        log.debug("verifyDevices host=${host} path=${it.value.ssdpPath} device=${it.value}")
+        log.debug("verifyDevices host=${host} path=${deviceData["ssdpPath"]}")
 
         sendHubCommand(new physicalgraph.device.HubAction([
-                path: it.value.ssdpPath,
+                path: deviceData["ssdpPath"],
                 method: "GET",
                 headers: [Host: host]
             ],
@@ -98,42 +98,23 @@ void verifyDevices() {
     }
 }
 
-def getVerifiedDevices() {
-    getDevices().findAll{ it.value.verified == true }
-}
-
-def getDevices() {
-    if (!state.devices) {
-        state.devices = [:]
-    }
-    state.devices
-}
-
 def addDevices() {
+	log.debug "Add devices"
     def devices = getDevices()
 
     selectedDevices.each { dni ->
-        def selectedDevice = devices.find { it.value.ssdpUSN == dni }
-        def d
-        if (selectedDevice) {
-            d = getChildDevice(dni)
-        }
+        def deviceData = devices[dni]
+        
+        if (deviceData) {
+            def childDevice = getChildDevice(dni)
 
-        if (!d) {
-            log.debug "Creating Denon AV receiver with dni: ${selectedDevice.value.ssdpUSN}"
-            addChildDevice("billsq", "Denon AV Receiver", selectedDevice.value.ssdpUSN, selectedDevice.value.hub, [
-                "label": selectedDevice.value.name,
-                "data": [
-                    "mac": selectedDevice.value.mac,
-                    "networkAddress": selectedDevice.value.networkAddress,
-                    "deviceAddress": selectedDevice.value.deviceAddress,
-                    "apiPort": selectedDevice.value.apiPort,
-                    "RenderingControlControlPath": selectedDevice.value.RenderingControlControlPath,
-                    "RenderingControlEventPath": selectedDevice.value.RenderingControlEventPath,
-                    "AVTransportControlPath": selectedDevice.value.AVTransportControlPath,
-                    "AVTransportEventPath": selectedDevice.value.AVTransportEventPath
-                ]
-            ])
+            if (!childDevice) {
+                log.debug "Creating child device with DNI: ${dni}"
+                addChildDevice("billsq", "Denon AV Receiver", dni, deviceData["hub"], [
+                    "label": deviceData["name"],
+                    "data": deviceData
+                ])
+            }
         }
     }
 }
@@ -216,7 +197,7 @@ void deviceDescriptionHandler(physicalgraph.device.HubResponse hubResponse) {
         if (verified == 2) {
             device.value << [verified: true]
             
-            def child = getChildDevice(device.value.ssdpUSN)
+            def child = getChildDevice(device.key)
             if (child) {
             	log.debug "Found existing child, sync..."
                 child.sync(device.value)
