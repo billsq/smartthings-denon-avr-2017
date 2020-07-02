@@ -22,6 +22,16 @@ metadata {
         attribute "net", "string"
         attribute "bt", "string"
 
+        //Adding modes and QS
+        attribute "sMovie", "string"        
+		attribute "sMusic", "string"          
+		attribute "sPure", "string"        
+		attribute "q1", "string"
+		attribute "q2", "string"
+		attribute "q3", "string"        
+		attribute "q4", "string"
+
+
         command "phono"
         command "cd"
         command "dvd"
@@ -35,6 +45,15 @@ metadata {
         command "aux2"
         command "net"
         command "bt"
+
+        //Adding modes and QS
+        command "sMovie"
+		command "sMusic"
+		command "sPure"
+		command "q1"
+		command "q2"
+		command "q3"
+		command "q4"
     }
 
     simulator {}
@@ -150,6 +169,30 @@ metadata {
         standardTile("refresh", "device.refresh", inactiveLabel: false, decoration: "flat", width: 1, height: 1) {
             state "default", label:"", action:"refresh.refresh", icon:"st.secondary.refresh"
         }
+
+        // Adding modes and QS
+        standardTile("input10", "device.sound", width: 4, height: 2, decoration: "flat"){
+        	state "sMusic", label: '${currentValue}', action:"sMusic", icon:"st.Entertainment.entertainment3", backgroundColor: "#FFFFFF", nextState:"sMovie"
+			state "sMovie", label: '${currentValue}', action:"sMovie", icon:"st.Entertainment.entertainment9", backgroundColor: "#FFFFFF", nextState:"sGame"
+			state "sGame", label: '${currentValue}', action:"sGame", icon:"st.Electronics.electronics6", backgroundColor: "#FFFFFF", nextState:"sPure"
+			state "sPure", label: '${currentValue}', action:"sPure", icon:"st.Entertainment.entertainment15", backgroundColor: "#FFFFFF", nextState:"sMusic"
+        }
+        standardTile("input11", "device.q1", width: 1, height: 1, decoration: "flat"){
+        	state "OFF", label: 'Quick 1', action: "q1",  backgroundColor: "#53a7c0",nextState:"ON"   // icon:"st.Electronics.electronics5",
+            state "ON", label: 'Quick 1', action: "q1", backgroundColor: "#79b821", nextState:"OFF"  //, icon:"st.Electronics.electronics5" 
+		}         
+        standardTile("input12", "device.q2", width: 1, height: 1, decoration: "flat"){
+        	state "OFF", label: 'Quick 2', action: "q2", backgroundColor:"#53a7c0" ,nextState:"ON"   //, icon:"st.Electronics.electronics5"
+            state "ON", label: 'Quick 2', action: "q2", backgroundColor: "#79b821" , nextState:"OFF"   
+		}         
+        standardTile("input13", "device.q3", width: 1, height: 1, decoration: "flat"){
+        	state "OFF", label: 'Quick 3', action: "q3", backgroundColor: "#53a7c0",nextState:"ON"   
+            state "ON", label: 'Quick 3', action: "q3", backgroundColor: "#79b821", nextState:"OFF"   
+		}         
+        standardTile("input14", "device.q4", width: 1, height: 1, decoration: "flat"){
+        	state "OFF", label: 'Quick 4', action: "q4", backgroundColor: "#53a7c0",nextState:"ON"   
+            state "ON", label: 'Quick 4', action: "q4", backgroundColor: "#79b821", nextState:"OFF"   
+		}
 
         main "switch"
         details(["mediaMulti", "switch", "phono", "cd", "dvd", "bd", "tv", "satcbl", "mplay", "game", "tuner", "aux1", "aux2", "net", "bt", "refresh"])
@@ -741,6 +784,44 @@ def bt() {
         ]
     )
 }
+
+
+ //SOUND MODES
+    def sMusic() {
+        request("SMMUSIC")
+    }
+    def sMovie() { 
+        request("SMMOVIE")
+    }
+    def sGame() {
+        request("SMGAME")
+    }
+    def sPure() {
+        request("SMPURE%20DIRECT")
+    }
+    //QUICK MODES
+    def q1() {
+        request("MSQUICK1")
+    }
+    def q2() { 
+        request("MSQUICK2")
+    }
+    def q3() {
+        request("MSQUICK3")
+    }
+    def q4() {
+        request("MSQUICK4")
+    }
+    def request(cmd)   {
+        log.debug "Executing '${cmd}' for ${device.label}"
+
+        new physicalgraph.device.HubAction([
+                path: "/goform/formiPhoneAppDirect.xml?${cmd}",
+                method: "GET",
+                headers: [Host: getApiAddress()],
+        ])
+    }
+
 
 // subscription
 def subscribe(List events) {
